@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A bell with a small brain-ish squiggle. Vector so no PNG set is needed. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F2F4FF"
+        android:pathData="M54,30c-9,0 -16,7 -16,16v10l-6,8v3h44v-3l-6,-8v-10c0,-9 -7,-16 -16,-16z" />
+    <path android:fillColor="#F2F4FF"
+        android:pathData="M48,70a6,6 0 0 0 12,0z" />
+    <path android:strokeColor="#1B1F3B" android:strokeWidth="2.5" android:fillColor="#00000000"
+        android:pathData="M45,46c3,-4 8,-4 9,0c1,-4 6,-4 9,0c-2,4 -6,5 -9,2c-3,3 -7,2 -9,-2z" />
+</vector>
