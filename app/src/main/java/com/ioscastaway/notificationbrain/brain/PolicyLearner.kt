@@ -11,7 +11,7 @@ class PolicyLearner {
     fun apply(current: Policy, facts: NotificationFacts, feedback: Feedback): Policy {
         val (action, match) = when (feedback.chip) {
             FeedbackChip.GOOD_CALL -> return current // a label, not a rule
-            FeedbackChip.WAS_IMPORTANT -> Verdict.KEEP to Match(facts.packageName, facts.channelId)
+            FeedbackChip.WAS_IMPORTANT, FeedbackChip.KEEP_LIKE_THIS -> Verdict.KEEP to Match(facts.packageName, facts.channelId)
             FeedbackChip.NEVER_TOUCH_APP -> Verdict.KEEP to Match(facts.packageName)
             FeedbackChip.DISMISS_LIKE_THIS -> Verdict.DISMISS to Match(facts.packageName, facts.channelId)
             FeedbackChip.ALWAYS_DISMISS_APP -> Verdict.DISMISS to Match(facts.packageName)

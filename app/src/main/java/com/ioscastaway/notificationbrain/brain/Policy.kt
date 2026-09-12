@@ -19,6 +19,8 @@ data class Policy(
     val rules: List<Rule> = emptyList(),
     /** Free-form, model- or learner-written explanation of why the rules look like they do. */
     val notes: String = "",
+    /** Natural-language rules the user typed, each tied to the [Rule]s it compiled into. */
+    val instructions: List<Instruction> = emptyList(),
 ) {
     fun withRules(newRules: List<Rule>, at: Long): Policy =
         copy(version = version + 1, revisedAt = at, rules = newRules)
@@ -45,6 +47,21 @@ data class Rule(
     val origin: RuleOrigin,
     val because: String,
     val createdAt: Long,
+    /** Set when the rule was compiled from an [Instruction]; removing the instruction removes it. */
+    val instructionId: String? = null,
+)
+
+/**
+ * One sentence the user wrote, kept verbatim. The rules are what the engine runs; the text is
+ * what the user meant, and what the nightly reviser (stage 1.5) will read.
+ */
+@Serializable
+data class Instruction(
+    val id: String,
+    val text: String,
+    val createdAt: Long,
+    /** The compiler's own one-line explanation of how it read the sentence. */
+    val explanation: String = "",
 )
 
 @Serializable
@@ -55,6 +72,10 @@ enum class RuleOrigin {
     FEEDBACK,
     /** Written by a model during a nightly revision (stage 1.5, not yet wired). */
     REVISER,
+    /** Compiled by a model from a sentence the user typed on the Rules tab. */
+    INSTRUCTION,
+    /** Proposed by [AutoLearner] from repeated quick swipes; adopted only after the court. */
+    OBSERVED,
 }
 
 /**

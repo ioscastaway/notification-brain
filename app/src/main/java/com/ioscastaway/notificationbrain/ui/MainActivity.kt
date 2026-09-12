@@ -38,13 +38,15 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         vm.refreshAccess()
+        vm.refreshShade()
     }
 
     companion object {
         const val EXTRA_TAB = "tab"
         const val TAB_HOME = 0
         const val TAB_ARCHIVE = 1
-        const val TAB_LEARN = 2
-        const val TAB_LAB = 3
+        const val TAB_TEACH = 2
+        const val TAB_RULES = 3
+        const val TAB_LAB = 4
     }
 }

@@ -3,6 +3,7 @@ package com.ioscastaway.notificationbrain.data
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.ioscastaway.notificationbrain.brain.AutoLearner
 import com.ioscastaway.notificationbrain.brain.FeedbackChip
 import com.ioscastaway.notificationbrain.brain.Label
 import com.ioscastaway.notificationbrain.brain.Labeler
@@ -51,6 +52,8 @@ data class NotificationRecord(
     val label: Label get() = Labeler.label(feedbackChip, outcome, msInShade)
 
     fun asReplayCase() = ReplayCase(facts(), label, id)
+
+    fun asObservation() = AutoLearner.Observation(packageName, channelId, outcome, msInShade, feedbackChip != null, label)
 
     companion object {
         fun from(facts: NotificationFacts, appLabel: String, verdict: Verdict, ruleId: String, because: String) =
