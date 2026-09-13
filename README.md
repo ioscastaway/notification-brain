@@ -2,19 +2,23 @@
 
 A notification listener that dismisses the notifications you would have swiped anyway, keeps
 every one of them in an archive you can review and undo, and rewrites its own policy from what
-you tell it there. Every new policy is tried against the whole archive before it is adopted.
+you tell it: a chip on one notification, a sentence in your own words, or nothing at all, just
+the way you keep swiping. Every new policy is tried against the whole archive before it is adopted.
 
 > Stage 1 of the Evolving App series. The plan is an app that keeps a knowledge base of itself
 > and fixes itself when it breaks. That is a ladder, and this is the first rung: an app that
 > changes its rules, and carries the test harness it needs to be allowed to.
 
 **Series:** Evolving App (stage 1) · Android × AI · Things Apple Would Never Let Me Do
-**Status:** builds; 16 JVM tests pass. On a Galaxy Z Fold 8 (One UI 9.0, Android 17): the
+**Status:** builds; 32 JVM tests pass. On a Galaxy Z Fold 8 (One UI 9.0, Android 17): the
 listener binds, every notification is judged and archived, and the one-time-code guard fired on
-a real device. On the Android 16 emulator: the full loop was verified end to end (swipe → Learn
+a real device. On the Android 16 emulator: the chip loop was verified end to end (swipe → Teach
 tab → "Dismiss ones like this" → policy v2 → the next notification on that channel dismissed by
-the new rule, visible in Archive with Reopen). Not yet measured: the false-dismissal rate over
-real days of use. See *What I learned*.
+the new rule, visible in Archive with Reopen), and so was the typed-rule loop ("Dismiss sales and
+promotions from the Shell app but keep order and shipping updates" → four compiled rules with the
+KEEP exceptions ordered first → policy v3 → a "Flash sale" already in the shade dismissed on
+adoption, "Order shipped" left alone). Not yet measured: the false-dismissal rate over real days
+of use. See *What I learned*.
 
 ## Why I built this
 
@@ -59,38 +63,61 @@ posted ──► facts ──► HardKeep guard ──► ordered rules ──�
                                          DISMISS ──► archive row ──► cancelNotification
 removed(reason) ──► outcome on the row (USER_SWIPED / USER_OPENED / ...)
 
-Archive / Learn tab: one chip ──► PolicyLearner ──► candidate policy
-                                                        │
+one chip on a card (Archive / Teach) ──► PolicyLearner      ─┐
+a sentence on the Rules tab ──► Claude ──► InstructionEditor  ─┼──► candidate policy
+three quick swipes, no taps ──► AutoLearner                   ─┘         │
                        PolicyCourt: replay candidate against every archived row with its label
                                                         │
                                    passes ──► adopt        fails ──► refuse, keep the feedback
+                                                        │
+                                   re-judge the shade, cancel what the new policy dismisses
 ```
 
-Four tabs:
+| Rules tab, a sentence compiled and previewed | Teach tab, the shade right now | Archive, with Reopen |
+|---|---|---|
+| ![Rules preview](docs/screenshots/rules-preview.png) | ![Teach](docs/screenshots/teach.png) | ![Archive](docs/screenshots/archive.png) |
 
-- **Home**: notification access, today's counts, the number that matters (dismissed and later
-  marked important, all time).
-- **Archive**: everything the brain dismissed. *Reopen* fires the notification's own intent if the
-  process is still alive, otherwise opens the app. *Teach* offers three chips: Good call, Was
-  important, Never touch this app.
-- **Learn**: notifications the brain kept and you swiped away one by one. Chips: Dismiss ones like
-  this, Always dismiss this app. The optional "why" text is stored for the nightly reviser (stage
-  1.5) and ignored by the stage-1 learner.
-- **Lab**: the current policy as the app sees it, a *Replay against archive* button, crash and ANR
-  history, and the bundled `ARCHITECTURE.md`.
+(Emulator screenshots. The pixel cat in the Archive shot is [cross-app-agent](https://github.com/ioscastaway/cross-app-agent)'s
+bubble from another session, not part of this app.)
+
+Three ways to teach it, all ending in the same court:
+
+1. **Chips, one notification at a time.** The *Teach* tab lists what is in the shade right now,
+   then what you swiped away one by one. Each card takes one chip: Dismiss ones like this, Always
+   dismiss this app, Keep ones like this. The *Archive* tab does the same for what the brain
+   dismissed: Good call, Was important, Never touch this app. A chip becomes a rule for that app
+   and channel. The optional "why" text is stored with the rule.
+2. **A sentence.** The *Rules* tab takes plain language ("쿠팡 광고는 지우고 배송 알림은 남겨",
+   "never touch anything from my bank"). Claude compiles it into rules through structured output,
+   the app shows the compiled rules for confirmation, and only then are they judged and adopted.
+   The sentence is kept verbatim next to its rules and can be removed as a unit.
+3. **Nothing.** After a targeted swipe the app checks whether any app + channel has now been
+   swiped away quickly three or more times with no taps and no feedback. If so, it proposes a
+   DISMISS rule on its own. Observed rules sit after everything you said explicitly.
+
+Whatever the source, a candidate policy is replayed against the archive and refused if it would
+have dismissed anything you marked important. On adoption the shade is re-judged immediately, so
+the notification you pointed at goes away.
+
+Five tabs: Home (access, today's counts, false dismissals all time), Archive, Teach, Rules, and
+Lab (the policy as the app sees it, *Replay against archive*, crash and ANR history, the bundled
+`ARCHITECTURE.md`).
 
 The seed policy has no dismiss rules. The brain keeps everything until taught, and the hard-keep
 guard (ongoing, not clearable, group summaries, calls, alarms, dialer and system packages,
-anything that looks like a one-time code) is code, not policy. Feedback cannot reach it.
+anything that looks like a one-time code) is code, not policy. No chip, sentence, or observation
+can reach it.
 
 ## Architecture
 
-`brain/` is pure Kotlin with no Android imports: facts, policy, engine, learner, replay, court. It
-runs in JVM tests and inside the app's replay. `platform/` is the only place that touches
-`StatusBarNotification`, files, or the notification manager. `data/` is Room. The full package map
-and invariants are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which the build bundles as an
-asset so the running app can show it on the Lab tab next to its own git revision. That file is the
-first entry of the knowledge base the later stages read.
+`brain/` is pure Kotlin with no Android imports: facts, policy, engine, the three learners
+(chips, instructions, observed swipes), the compiler prompt and schema, replay, court. It runs in
+JVM tests and inside the app's replay. `platform/` is the only place that touches
+`StatusBarNotification`, files, the notification manager, or the Anthropic SDK. `data/` is Room.
+
+The full package map and invariants are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which
+the build bundles as an asset so the running app can show it on the Lab tab next to its own git
+revision. That file is the first entry of the knowledge base the later stages read.
 
 ## What I learned
 
@@ -103,6 +130,15 @@ first entry of the knowledge base the later stages read.
   candidate against the labeled history and refuses anything that would have dismissed a
   notification the user marked important. On the JVM this is four tests. On the device it is the
   reason "Dismiss ones like this" can be refused, which the snackbar explains.
+- **A sentence compiles better than I expected, with one catch.** Structured output with a strict
+  schema meant zero parse failures. Given "keep order and shipping updates" and an app with a
+  single channel, the model wrote substring and regex matches instead of guessing a channel, and
+  put the KEEP exceptions before the DISMISS on its own because the prompt says first match wins.
+  The catch: the first version asked for "because" in the user's language and got Spanish for an
+  English sentence; "in the same language the sentence is written in" fixed it.
+- **Backfill matters on day one.** Notifications posted before the listener connects never reach
+  `onNotificationPosted`. The Teach tab reads `activeNotifications` and gives those a row too,
+  otherwise the first thing a new user sees is a shade the brain claims to know nothing about.
 - **Shell notifications are enough to verify the loop.** `cmd notification post` from adb posts
   as `com.android.shell`, which the listener treats like any other app. The whole
   swipe → teach → dismiss cycle was driven that way on the emulator.
@@ -128,11 +164,18 @@ this app learns from do not exist on iOS.
 ## Limitations
 
 - **Security and privacy.** Notification access means this app reads the content of every
-  notification, including messages and codes. Everything stays on the device: the manifest has no
-  `INTERNET` permission, the archive lives in app-private storage and is pruned at 60 days. The
-  hard-keep guard never dismisses calls, alarms, ongoing notifications, or one-time codes, and it
-  is not reachable from feedback. Dismissing removes a notification from the shade only; nothing
-  in the source app is deleted or marked read.
+  notification, including messages and codes. Notification bodies never leave the device: the
+  archive lives in app-private storage and is pruned at 60 days. The one network call is the
+  Rules tab, and what it sends is the sentence you typed plus the list of app labels, package
+  names and channel ids the listener has seen or the launcher lists, so the model can name the
+  right app. That list is itself a fingerprint of what you have installed; if that is too much,
+  build without an API key and the Rules tab turns itself off while chips and observed learning
+  keep working. The hard-keep guard never dismisses calls, alarms, ongoing notifications, or
+  one-time codes, and no learner can reach it. Dismissing removes a notification from the shade
+  only; nothing in the source app is deleted or marked read.
+- **The API key is baked into the debug build** from `local.properties`, which is the right shape
+  for a sideloaded experiment on a phone its owner controls and the wrong shape for anything
+  shipped.
 - **Undo is partial.** A `PendingIntent` cannot be persisted. *Reopen* works fully while the
   listener process is alive and degrades to launching the app after a restart.
 - **Heads-up flash.** See *What I learned*.
@@ -146,6 +189,8 @@ this app learns from do not exist on iOS.
   after a few weeks of real use.
 
 ## Setup
+
+Optional, for the Rules tab: put `ANTHROPIC_API_KEY=...` in `local.properties`.
 
 ```bash
 ./gradlew assembleDebug
@@ -165,14 +210,15 @@ harness is what makes the rewrite safe, and it will outlive the rules it current
 
 ## Next
 
-- **Stage 1.5**: a nightly `PolicyReviser` that reads the chips, the "why" notes, and per-app
-  statistics (never notification bodies), writes a candidate policy, and goes through the same
-  court.
+- **Stage 1.5**: a nightly `PolicyReviser` that reads the instructions, the chips, the "why"
+  notes, and per-app statistics (never notification bodies), rewrites the policy as a whole, and
+  goes through the same court. The Rules tab is the first half of it: the compiler prompt, the
+  schema, and the court are already there.
 - **Stage 2**: the classifier behind `NotificationClassifier` becomes a loaded module.
 - **Stage 3**: `CrashRecord` + `ARCHITECTURE.md` + `BuildConfig.GIT_SHA` become the input of an
   app that opens a pull request on itself.
 
 ---
 
-**Reason I don't regret switching to Android** (number to be assigned in the profile index):
+**Reason #08 I don't regret switching to Android:**
 The phone's notifications are a data source, not just a distraction.

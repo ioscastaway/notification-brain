@@ -18,17 +18,22 @@ com.ioscastaway.notificationbrain
 │   ├── PolicyEngine        HardKeep guard → first matching rule → default KEEP
 │   ├── Feedback            FeedbackChip, Outcome (from REASON_*), Label, Labeler
 │   ├── PolicyLearner       (Policy, facts, Feedback) → candidate Policy. Pure.
+│   ├── Instructions        KnownApp, CompiledRules (model output), RuleCompiler seam,
+│   │                       RuleCompilerPrompt (system prompt + JSON schema), InstructionEditor
+│   ├── AutoLearner         repeated quick swipes → proposed DISMISS rules (origin OBSERVED)
 │   └── Replay              Replay.run, ReplayReport, PolicyCourt (adopt / reject / unchanged)
 ├── data/                   Room. NotificationRecord (archive row), CrashRecord, BrainDao, BrainRepository
 ├── platform/               Everything that touches Android APIs
 │   ├── BrainNotificationListener   NotificationListenerService: posted → classify → archive → cancel
 │   ├── FactsExtractor              StatusBarNotification → NotificationFacts (the only reader of sbn)
+│   ├── ClaudeRuleCompiler          RuleCompiler over the Anthropic SDK, structured output, one call
+│   ├── ApiKey / InstalledApps      BuildConfig key → client; launcher apps for the compiler's vocabulary
 │   ├── FilePolicyStore             files/policy.json + StateFlow<Policy>
 │   ├── ContentIntentCache          in-memory key → PendingIntent for "Reopen"
 │   ├── SummaryNotifier             the one notification we post ("N tidied today")
 │   ├── NotificationAccess          is the listener enabled / open the settings row
 │   └── CrashCollector              uncaught handler → file; ApplicationExitInfo → CrashRecord
-└── ui/                     Compose. MainActivity, BrainViewModel, BrainApp (Home/Archive/Learn/Lab)
+└── ui/                     Compose. MainActivity, BrainViewModel, BrainApp (Home/Archive/Teach/Rules/Lab)
 ```
 
 ## Data flow
@@ -46,11 +51,27 @@ system removes notification (any reason)
   → Outcome from REASON_*                         USER_SWIPED / USER_OPENED / APP_REMOVED / ...
   → BrainRepository.recordRemoved                 fills outcome + removedAt on the PENDING row
 
-user taps a chip on the Archive or Learn tab
+user taps a chip on the Archive or Teach tab
   → BrainRepository.giveFeedback
   → PolicyLearner.apply(current, facts, feedback)  candidate Policy
   → PolicyCourt.judge(current, candidate, history) Replay over every archived row with its Label
   → Adopted: FilePolicyStore.save     Rejected: feedback stored, policy unchanged
+  → BrainNotificationListener.applyPolicyToShade   re-judge activeNotifications, cancel new DISMISSes
+
+user types a sentence on the Rules tab
+  → BrainRepository.compileInstruction              knownApps() = archive channels + launcher apps
+  → ClaudeRuleCompiler.compile(text, context)        one Messages call, output_config.format = schema
+  → CompiledRules shown as a preview; user taps Adopt
+  → InstructionEditor.adopt → PolicyCourt.judge → save → applyPolicyToShade
+
+user swipes a kept notification (REASON_CANCEL)
+  → recordRemoved, then BrainRepository.learnFromSwipes
+  → AutoLearner.propose(current, observations)      ≥3 quick swipes, 0 taps, 0 feedback, no rule yet
+  → AutoLearner.apply → PolicyCourt.judge → save
+
+Teach tab, "In your shade now"
+  → BrainNotificationListener.shade()               activeNotifications → shadeRows()
+  → rows missing from the archive are inserted as KEEP via rule "backfill"
 ```
 
 ## Invariants
@@ -66,7 +87,10 @@ user taps a chip on the Archive or Learn tab
   observed outcome second).
 - A candidate policy is adopted only if `ReplayReport.passes` (zero false dismissals). Missed
   noise is reported, never blocking.
-- Nothing leaves the device. The manifest has no `INTERNET` permission in stage 1.
+- The only network call is `ClaudeRuleCompiler`. It sends the typed sentence and `KnownApp`
+  entries (label, package, channel ids). Notification bodies never leave the device.
+- Every learner produces a candidate and hands it to `PolicyCourt`; nothing calls
+  `PolicyStore.save` except `BrainRepository` after a verdict.
 
 ## Known limits (see README → Limitations for the user-facing version)
 
@@ -78,8 +102,9 @@ user taps a chip on the Archive or Learn tab
 ## Where the next stages plug in
 
 - Stage 1.5 (nightly reviser): implement `RuleOrigin.REVISER` producers as a `PolicyReviser` that
-  reads chips, notes, and per-app statistics (never notification bodies), writes a candidate
-  `Policy`, and submits it to `PolicyCourt`. Same court, same adoption rule.
+  reads instructions, chips, notes, and per-app statistics (never notification bodies), rewrites
+  the `Policy` as a whole, and submits it to `PolicyCourt`. `RuleCompilerPrompt` and
+  `ClaudeRuleCompiler` are the pieces to extend; same court, same adoption rule.
 - Stage 2 (logic): replace `Graph.classifier` with a loaded module implementing
   `NotificationClassifier`. The facts type and the replay harness stay.
 - Stage 3 (code): `CrashRecord` rows + this file + `BuildConfig.GIT_SHA` are the diagnosis input.

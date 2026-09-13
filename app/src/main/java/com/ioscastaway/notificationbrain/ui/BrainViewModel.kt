@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ioscastaway.notificationbrain.App
 import com.ioscastaway.notificationbrain.brain.Adoption
+import com.ioscastaway.notificationbrain.brain.CompiledRules
 import com.ioscastaway.notificationbrain.brain.FeedbackChip
 import com.ioscastaway.notificationbrain.brain.ReplayReport
 import com.ioscastaway.notificationbrain.data.NotificationRecord
@@ -30,6 +31,12 @@ class BrainViewModel(app: Application) : AndroidViewModel(app) {
     var message by mutableStateOf<String?>(null)
     var replayReport by mutableStateOf<ReplayReport?>(null)
         private set
+    val canCompile: Boolean get() = repo.canCompile
+    /** Rows for what is in the shade right now; null while the listener is not bound. */
+    var shade by mutableStateOf<List<NotificationRecord>?>(null)
+        private set
+    var compileState by mutableStateOf<CompileState>(CompileState.Idle)
+        private set
     val architectureNotes: String by lazy {
         runCatching { app.assets.open("ARCHITECTURE.md").bufferedReader().use { it.readText() } }
             .getOrDefault("(docs/ARCHITECTURE.md was not bundled)")
@@ -49,13 +56,26 @@ class BrainViewModel(app: Application) : AndroidViewModel(app) {
         accessGranted = NotificationAccess.isGranted(getApplication())
     }
 
+    fun refreshShade() {
+        viewModelScope.launch {
+            shade = BrainNotificationListener.instance?.let { runCatching { it.shade() }.getOrNull() }
+        }
+    }
+
+    /** After any adoption: judge the shade again so the change is visible immediately. */
+    private suspend fun applyToShade(): String {
+        val n = BrainNotificationListener.instance?.let { runCatching { it.applyPolicyToShade() }.getOrDefault(0) } ?: 0
+        refreshShade()
+        return if (n > 0) " Dismissed $n from the shade." else ""
+    }
+
     fun giveFeedback(record: NotificationRecord, chip: FeedbackChip, note: String?) {
         viewModelScope.launch {
-            message = when (val result = repo.giveFeedback(record.id, chip, note)) {
-                is Adoption.Adopted -> "Policy v${result.policy.version} adopted. ${result.report.summary()}"
-                is Adoption.Rejected -> "Refused: that rule would have dismissed ${result.report.falseDismissals.size} " +
-                    "notification(s) you marked important. Feedback saved, policy unchanged."
+            val result = repo.giveFeedback(record.id, chip, note)
+            message = when (result) {
+                is Adoption.Rejected -> describe(result).replace("Policy unchanged.", "Feedback saved, policy unchanged.")
                 Adoption.Unchanged -> "Noted. No rule change."
+                else -> describe(result) + applyToShade()
             }
         }
     }
@@ -68,6 +88,42 @@ class BrainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun compileInstruction(text: String) {
+        if (text.isBlank()) return
+        compileState = CompileState.Compiling
+        viewModelScope.launch {
+            compileState = runCatching { repo.compileInstruction(text) }
+                .fold({ CompileState.Preview(text, it) }, { CompileState.Failed(it.message ?: it.toString()) })
+        }
+    }
+
+    fun adoptInstruction() {
+        val preview = compileState as? CompileState.Preview ?: return
+        viewModelScope.launch {
+            val result = repo.adoptInstruction(preview.text, preview.compiled)
+            message = describe(result) + if (result is Adoption.Adopted) applyToShade() else ""
+            compileState = CompileState.Idle
+        }
+    }
+
+    fun discardPreview() {
+        compileState = CompileState.Idle
+    }
+
+    fun removeInstruction(id: String) {
+        viewModelScope.launch {
+            val result = repo.removeInstruction(id)
+            message = describe(result) + if (result is Adoption.Adopted) applyToShade() else ""
+        }
+    }
+
+    private fun describe(result: Adoption): String = when (result) {
+        is Adoption.Adopted -> "Policy v${result.policy.version} adopted. ${result.report.summary()}"
+        is Adoption.Rejected -> "Refused: that would have dismissed ${result.report.falseDismissals.size} " +
+            "notification(s) you marked important. Policy unchanged."
+        Adoption.Unchanged -> "No rule change."
+    }
+
     fun runReplay() {
         viewModelScope.launch { replayReport = repo.replayCurrent() }
     }
@@ -75,4 +131,11 @@ class BrainViewModel(app: Application) : AndroidViewModel(app) {
     fun resetPolicy() {
         viewModelScope.launch { repo.resetPolicy(); message = "Policy reset to seed."; replayReport = null }
     }
+}
+
+sealed class CompileState {
+    data object Idle : CompileState()
+    data object Compiling : CompileState()
+    data class Preview(val text: String, val compiled: CompiledRules) : CompileState()
+    data class Failed(val error: String) : CompileState()
 }

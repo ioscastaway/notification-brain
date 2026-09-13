@@ -28,6 +28,10 @@ interface BrainDao {
     @Query("SELECT * FROM notifications WHERE verdict = 'KEEP' AND outcome = 'USER_SWIPED' AND feedbackChip IS NULL ORDER BY postedAt DESC LIMIT 300")
     fun swipedCandidates(): Flow<List<NotificationRecord>>
 
+    /** Rows still in the shade for the given keys (newest per key wins in the caller). */
+    @Query("SELECT * FROM notifications WHERE `key` IN (:keys) AND outcome = 'PENDING' ORDER BY postedAt DESC")
+    suspend fun pendingByKeys(keys: List<String>): List<NotificationRecord>
+
     @Query("SELECT * FROM notifications ORDER BY postedAt DESC LIMIT 2000")
     suspend fun history(): List<NotificationRecord>
 
@@ -43,6 +47,10 @@ interface BrainDao {
     @Query("SELECT COUNT(*) FROM notifications WHERE verdict = 'DISMISS' AND feedbackChip IN ('WAS_IMPORTANT', 'NEVER_TOUCH_APP')")
     fun falseDismissals(): Flow<Int>
 
+    /** Every (package, channel) the listener has seen, with the app label: the compiler's vocabulary. */
+    @Query("SELECT packageName, appLabel, channelId FROM notifications GROUP BY packageName, channelId ORDER BY packageName")
+    suspend fun knownChannels(): List<KnownChannel>
+
     @Query("DELETE FROM notifications WHERE postedAt < :before")
     suspend fun pruneBefore(before: Long): Int
 
@@ -55,3 +63,5 @@ interface BrainDao {
     @Query("SELECT MAX(timestamp) FROM crashes WHERE source = 'exit-info'")
     suspend fun newestExitInfo(): Long?
 }
+
+data class KnownChannel(val packageName: String, val appLabel: String, val channelId: String?)

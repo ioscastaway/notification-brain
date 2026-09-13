@@ -1,13 +1,18 @@
 package com.ioscastaway.notificationbrain
 
 import android.content.Context
+import com.ioscastaway.notificationbrain.brain.AutoLearner
 import com.ioscastaway.notificationbrain.brain.NotificationClassifier
 import com.ioscastaway.notificationbrain.brain.PolicyCourt
 import com.ioscastaway.notificationbrain.brain.PolicyEngine
 import com.ioscastaway.notificationbrain.brain.PolicyLearner
 import com.ioscastaway.notificationbrain.data.BrainDatabase
 import com.ioscastaway.notificationbrain.data.BrainRepository
+import com.ioscastaway.notificationbrain.BuildConfig
+import com.ioscastaway.notificationbrain.platform.ApiKey
+import com.ioscastaway.notificationbrain.platform.ClaudeRuleCompiler
 import com.ioscastaway.notificationbrain.platform.ContentIntentCache
+import com.ioscastaway.notificationbrain.platform.InstalledApps
 import com.ioscastaway.notificationbrain.platform.CrashCollector
 import com.ioscastaway.notificationbrain.platform.FilePolicyStore
 import com.ioscastaway.notificationbrain.platform.PolicyStore
@@ -23,8 +28,11 @@ class Graph(context: Context) {
         dao = database.dao(),
         policyStore = policyStore,
         learner = PolicyLearner(),
+        autoLearner = AutoLearner(),
         court = PolicyCourt(app.packageName),
         ownPackage = app.packageName,
+        compiler = ApiKey.client()?.let { ClaudeRuleCompiler(it, BuildConfig.CLAUDE_MODEL) },
+        installedApps = { InstalledApps.launcherApps(app) },
     )
     val contentIntentCache = ContentIntentCache(app)
     val summaryNotifier = SummaryNotifier(app)

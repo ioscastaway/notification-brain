@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -16,6 +17,15 @@ val gitSha: Provider<String> = providers.exec {
     isIgnoreExitValue = true
 }.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }
 
+// ANTHROPIC_API_KEY comes from local.properties (git-ignored) and is exposed via BuildConfig.
+// Never commit a key. An empty value is allowed so the project still builds without one; the
+// Rules tab then explains that typed rules need a key.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val anthropicApiKey: String = localProps.getProperty("ANTHROPIC_API_KEY") ?: System.getenv("ANTHROPIC_API_KEY") ?: ""
+
 android {
     namespace = "com.ioscastaway.notificationbrain"
     compileSdk = 36
@@ -29,6 +39,8 @@ android {
         versionName = "0.1.0"
 
         buildConfigField("String", "GIT_SHA", "\"${gitSha.get()}\"")
+        buildConfigField("String", "ANTHROPIC_API_KEY", "\"$anthropicApiKey\"")
+        buildConfigField("String", "CLAUDE_MODEL", "\"claude-opus-5\"")
     }
 
     buildTypes {
@@ -46,6 +58,17 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    packaging {
+        // The Anthropic Java SDK pulls in Jackson + OkHttp; these META-INF entries collide on Android.
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties", "META-INF/versions/9/module-info.class",
+                "META-INF/*.kotlin_module",
+            )
+        }
     }
 
     sourceSets {
@@ -74,6 +97,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    // Official Anthropic SDK (Java, used from Kotlin). Only the rule compiler touches it.
+    implementation(libs.anthropic.java)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)

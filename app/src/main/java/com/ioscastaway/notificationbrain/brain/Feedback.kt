@@ -16,13 +16,15 @@ enum class FeedbackChip(val title: String, val appliesTo: Verdict) {
     DISMISS_LIKE_THIS("Dismiss ones like this", Verdict.KEEP),
     /** Adds a DISMISS rule for the whole app. */
     ALWAYS_DISMISS_APP("Always dismiss this app", Verdict.KEEP),
+    /** On something the brain kept: confirms it, adds a KEEP rule for this app + channel. */
+    KEEP_LIKE_THIS("Keep ones like this", Verdict.KEEP),
     ;
 
     /** The label this chip implies for replay: was the notification important or noise? */
     val label: Label
         get() = when (this) {
             GOOD_CALL, DISMISS_LIKE_THIS, ALWAYS_DISMISS_APP -> Label.NOISE
-            WAS_IMPORTANT, NEVER_TOUCH_APP -> Label.IMPORTANT
+            WAS_IMPORTANT, NEVER_TOUCH_APP, KEEP_LIKE_THIS -> Label.IMPORTANT
         }
 }
 

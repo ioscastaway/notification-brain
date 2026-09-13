@@ -30,6 +30,13 @@ class PolicyLearnerTest {
         assertSame(current, learner.apply(current, facts(), Feedback(FeedbackChip.GOOD_CALL, null, 1)))
     }
 
+    @Test fun `keep ones like this adds a keep rule and labels important`() {
+        val next = learner.apply(Policy.seed(), facts(), Feedback(FeedbackChip.KEEP_LIKE_THIS, null, 1))
+        assertEquals(Verdict.KEEP, next.rules.single().action)
+        assertEquals(Match("com.example.shop", "promo"), next.rules.single().match)
+        assertEquals(Label.IMPORTANT, FeedbackChip.KEEP_LIKE_THIS.label)
+    }
+
     @Test fun `app-wide chips ignore the channel`() {
         val next = learner.apply(Policy.seed(), facts(), Feedback(FeedbackChip.ALWAYS_DISMISS_APP, null, 1))
         assertEquals(Match("com.example.shop"), next.rules.single().match)

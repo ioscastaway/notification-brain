@@ -4,7 +4,20 @@
     <!-- Our own "N tidied today" summary notification (Android 13+ runtime permission). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- No INTERNET permission in stage 1. Everything the listener reads stays on the device. -->
+    <!--
+        Only the Rules tab uses the network: the sentence you typed and the list of app labels,
+        packages and channel ids go to the model so it can name the right app. Notification bodies
+        never leave the device.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Package visibility (API 30+): launcher apps only, so a typed rule can name an app by label. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".App"

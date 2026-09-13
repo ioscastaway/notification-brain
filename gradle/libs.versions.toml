@@ -9,6 +9,7 @@ lifecycle = "2.9.1"
 coroutines = "1.10.2"
 serialization = "1.9.0"
 room = "2.7.2"
+anthropic = "2.62.0"
 junit = "4.13.2"
 
 [libraries]
@@ -27,6 +28,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+anthropic-java = { group = "com.anthropic", name = "anthropic-java", version.ref = "anthropic" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
