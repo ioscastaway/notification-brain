@@ -103,6 +103,16 @@ Five tabs: Home (access, today's counts, false dismissals all time), Archive, Te
 Lab (the policy as the app sees it, *Replay against archive*, crash and ANR history, the bundled
 `ARCHITECTURE.md`).
 
+**Catching up and cleaning up.** The Archive has two views. *Digest* groups what the brain
+dismissed by day and then by app, with counts and a "new" badge, so a day's worth of dismissals
+can be skimmed in a few cards; each group can be marked reviewed or deleted, and the summary
+notification says how many are still unreviewed. *All* is the flat list. A storage card shows
+how many records and megabytes the archive holds and offers *Delete reviewed*, *Older than 30 /
+7 days*, and *Delete everything*, each behind a confirmation. Deleting never touches rules, and it
+does not lose what you taught either: any row that carried a chip is copied to a small `lessons`
+table before it goes, and the court reads lessons alongside the archive. Only notification
+content is deleted.
+
 The seed policy has no dismiss rules. The brain keeps everything until taught, and the hard-keep
 guard (ongoing, not clearable, group summaries, calls, alarms, dialer and system packages,
 anything that looks like a one-time code) is code, not policy. No chip, sentence, or observation
@@ -142,6 +152,11 @@ revision. That file is the first entry of the knowledge base the later stages re
 - **Shell notifications are enough to verify the loop.** `cmd notification post` from adb posts
   as `com.android.shell`, which the listener treats like any other app. The whole
   swipe → teach → dismiss cycle was driven that way on the emulator.
+- **Deleting the evidence must not delete the verdict.** The first version of manual deletion
+  quietly weakened the court: a row marked "was important" and then deleted could no longer stop
+  a contradicting rule. The fix was to keep the label and the matching facts as a *lesson* when
+  the row is deleted. Lessons are a few hundred bytes each and exist only for rows that carried
+  a chip, so storage stays the user's to manage while the brain forgets nothing it was told.
 - **The listener only sees a notification after it is posted.** A heads-up can flash before the
   cancel lands. Doing better needs `NotificationAssistantService`, which is a system role a
   sideloaded app can only take through `adb shell cmd notification allow_assistant`. That is a

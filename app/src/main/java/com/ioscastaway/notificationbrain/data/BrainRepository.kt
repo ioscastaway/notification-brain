@@ -17,6 +17,7 @@ import com.ioscastaway.notificationbrain.brain.PolicyCourt
 import com.ioscastaway.notificationbrain.brain.PolicyEngine
 import com.ioscastaway.notificationbrain.brain.PolicyLearner
 import com.ioscastaway.notificationbrain.brain.Replay
+import com.ioscastaway.notificationbrain.brain.ReplayCase
 import com.ioscastaway.notificationbrain.brain.ReplayReport
 import com.ioscastaway.notificationbrain.brain.Verdict
 import com.ioscastaway.notificationbrain.platform.PolicyStore
@@ -62,7 +63,7 @@ class BrainRepository(
         val proposals = autoLearner.propose(current, history.map { it.asObservation() })
         if (proposals.isEmpty()) return Adoption.Unchanged
         val candidate = autoLearner.apply(current, proposals, System.currentTimeMillis())
-        val verdict = court.judge(current, candidate, history.map { it.asReplayCase() })
+        val verdict = court.judge(current, candidate, history.map { it.asReplayCase() } + dao.lessons().map { it.asReplayCase() })
         if (verdict is Adoption.Adopted) policyStore.save(verdict.policy)
         verdict
     }
@@ -94,6 +95,32 @@ class BrainRepository(
     fun seenSince(since: Long): Flow<Int> = dao.seenSince(since)
     fun falseDismissals(): Flow<Int> = dao.falseDismissals()
     fun crashes(): Flow<List<CrashRecord>> = dao.crashes()
+    fun unreviewedDismissed(): Flow<Int> = dao.unreviewedDismissed()
+    fun recordCount(): Flow<Int> = dao.count()
+    suspend fun unreviewedDismissedCount() = dao.unreviewedDismissedCount()
+
+    suspend fun markReviewed(ids: List<Long>) = dao.markReviewed(ids, System.currentTimeMillis())
+    suspend fun markAllReviewed() = dao.markAllReviewed(System.currentTimeMillis())
+
+    /**
+     * Deleting rows is the user's call; the app only prunes at 60 days. Rules are never touched by
+     * a deletion, and neither is what the user taught: every row that carried a chip is first
+     * copied to `lessons`, which the court reads alongside the archive.
+     */
+    suspend fun deleteRecords(ids: List<Long>): Int { keepLessons(dao.labeledIn(ids)); return dao.deleteIds(ids) }
+    suspend fun deleteReviewed(): Int { keepLessons(dao.labeledReviewed()); return dao.deleteReviewed() }
+    suspend fun deleteOlderThan(days: Int): Int {
+        val before = System.currentTimeMillis() - days * 24L * 60 * 60 * 1000
+        keepLessons(dao.labeledBefore(before)); return dao.pruneBefore(before)
+    }
+    suspend fun deleteAll(): Int { keepLessons(dao.labeledAll()); return dao.deleteAll() }
+    fun lessonCount(): Flow<Int> = dao.lessonCount()
+
+    private suspend fun keepLessons(rows: List<NotificationRecord>) {
+        val now = System.currentTimeMillis()
+        val lessons = rows.mapNotNull { LessonRecord.from(it, now) }
+        if (lessons.isNotEmpty()) dao.insertLessons(lessons)
+    }
     suspend fun dismissedCountSince(since: Long) = dao.dismissedCountSince(since)
     suspend fun record(id: Long) = dao.byId(id)
 
@@ -110,7 +137,7 @@ class BrainRepository(
 
         val current = policyStore.current()
         val candidate = learner.apply(current, record.facts(), Feedback(chip, note, now))
-        val history = dao.history().map { if (it.id == recordId) updated.asReplayCase() else it.asReplayCase() }
+        val history = replayHistory().map { if (it.recordId == recordId) updated.asReplayCase() else it }
         val verdict = court.judge(current, candidate, history)
         if (verdict is Adoption.Adopted) policyStore.save(verdict.policy)
         verdict
@@ -135,7 +162,7 @@ class BrainRepository(
     suspend fun adoptInstruction(text: String, compiled: CompiledRules): Adoption = policyLock.withLock {
         val current = policyStore.current()
         val candidate = InstructionEditor.adopt(current, text, compiled, System.currentTimeMillis())
-        val verdict = court.judge(current, candidate, dao.history().map { it.asReplayCase() })
+        val verdict = court.judge(current, candidate, replayHistory())
         if (verdict is Adoption.Adopted) policyStore.save(verdict.policy)
         verdict
     }
@@ -144,7 +171,7 @@ class BrainRepository(
     suspend fun removeInstruction(instructionId: String): Adoption = policyLock.withLock {
         val current = policyStore.current()
         val candidate = InstructionEditor.remove(current, instructionId, System.currentTimeMillis())
-        val verdict = court.judge(current, candidate, dao.history().map { it.asReplayCase() })
+        val verdict = court.judge(current, candidate, replayHistory())
         if (verdict is Adoption.Adopted) policyStore.save(verdict.policy)
         verdict
     }
@@ -156,16 +183,23 @@ class BrainRepository(
         Adoption.Unchanged -> null
     }
 
+    /** The court's history: every archived row, plus the lessons kept from deleted rows. */
+    private suspend fun replayHistory(): List<ReplayCase> =
+        dao.history().map { it.asReplayCase() } + dao.lessons().map { it.asReplayCase() }
+
     /** Replays the current policy against the archive, for the Lab screen. */
     suspend fun replayCurrent(): ReplayReport {
         val engine = PolicyEngine({ policyStore.current() }, ownPackage)
-        return Replay.run(engine, dao.history().map { it.asReplayCase() })
+        return Replay.run(engine, replayHistory())
     }
 
     suspend fun resetPolicy() = policyLock.withLock { policyStore.save(Policy.seed()) }
 
-    suspend fun prune(olderThanMs: Long = 60L * 24 * 60 * 60 * 1000): Int =
-        dao.pruneBefore(System.currentTimeMillis() - olderThanMs)
+    suspend fun prune(olderThanMs: Long = 60L * 24 * 60 * 60 * 1000): Int {
+        val before = System.currentTimeMillis() - olderThanMs
+        keepLessons(dao.labeledBefore(before))
+        return dao.pruneBefore(before)
+    }
 
     suspend fun insertCrash(crash: CrashRecord) = dao.insertCrash(crash)
     suspend fun newestExitInfo(): Long? = dao.newestExitInfo()

@@ -54,6 +54,55 @@ interface BrainDao {
     @Query("DELETE FROM notifications WHERE postedAt < :before")
     suspend fun pruneBefore(before: Long): Int
 
+    // ---- digest and cleanup ----
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE verdict = 'DISMISS' AND reviewedAt IS NULL")
+    fun unreviewedDismissed(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE verdict = 'DISMISS' AND reviewedAt IS NULL")
+    suspend fun unreviewedDismissedCount(): Int
+
+    @Query("UPDATE notifications SET reviewedAt = :at WHERE id IN (:ids) AND reviewedAt IS NULL")
+    suspend fun markReviewed(ids: List<Long>, at: Long): Int
+
+    @Query("UPDATE notifications SET reviewedAt = :at WHERE verdict = 'DISMISS' AND reviewedAt IS NULL")
+    suspend fun markAllReviewed(at: Long): Int
+
+    @Query("DELETE FROM notifications WHERE id IN (:ids)")
+    suspend fun deleteIds(ids: List<Long>): Int
+
+    @Query("DELETE FROM notifications WHERE verdict = 'DISMISS' AND reviewedAt IS NOT NULL")
+    suspend fun deleteReviewed(): Int
+
+    @Query("DELETE FROM notifications")
+    suspend fun deleteAll(): Int
+
+    @Query("SELECT COUNT(*) FROM notifications")
+    fun count(): Flow<Int>
+
+    // ---- lessons: what deletion must not lose ----
+
+    @Query("SELECT * FROM notifications WHERE id IN (:ids) AND feedbackChip IS NOT NULL")
+    suspend fun labeledIn(ids: List<Long>): List<NotificationRecord>
+
+    @Query("SELECT * FROM notifications WHERE postedAt < :before AND feedbackChip IS NOT NULL")
+    suspend fun labeledBefore(before: Long): List<NotificationRecord>
+
+    @Query("SELECT * FROM notifications WHERE verdict = 'DISMISS' AND reviewedAt IS NOT NULL AND feedbackChip IS NOT NULL")
+    suspend fun labeledReviewed(): List<NotificationRecord>
+
+    @Query("SELECT * FROM notifications WHERE feedbackChip IS NOT NULL")
+    suspend fun labeledAll(): List<NotificationRecord>
+
+    @Insert
+    suspend fun insertLessons(lessons: List<LessonRecord>)
+
+    @Query("SELECT * FROM lessons ORDER BY postedAt DESC LIMIT 2000")
+    suspend fun lessons(): List<LessonRecord>
+
+    @Query("SELECT COUNT(*) FROM lessons")
+    fun lessonCount(): Flow<Int>
+
     @Insert
     suspend fun insertCrash(crash: CrashRecord)
 

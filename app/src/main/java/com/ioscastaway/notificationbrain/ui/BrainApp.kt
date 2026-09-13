@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,6 +37,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,6 +49,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -54,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ioscastaway.notificationbrain.BuildConfig
+import com.ioscastaway.notificationbrain.brain.Digest
 import com.ioscastaway.notificationbrain.brain.FeedbackChip
 import com.ioscastaway.notificationbrain.brain.Verdict
 import com.ioscastaway.notificationbrain.data.CrashRecord
@@ -90,9 +96,7 @@ fun BrainApp(vm: BrainViewModel) {
         val m = Modifier.padding(padding).fillMaxSize()
         when (tab) {
             0 -> HomeScreen(vm, m)
-            1 -> RecordList(vm.dismissed.collectAsStateWithLifecycle().value, m,
-                empty = "Nothing dismissed yet. The seed policy keeps everything; teach it from the Teach tab.",
-                onFeedback = { feedbackTarget = it; feedbackFromShade = false }, onReopen = vm::reopen)
+            1 -> ArchiveScreen(vm, m, onFeedback = { feedbackTarget = it; feedbackFromShade = false })
             2 -> TeachScreen(vm, m, onTeach = { record, fromShade -> feedbackTarget = record; feedbackFromShade = fromShade })
             3 -> RulesScreen(vm, m)
             else -> LabScreen(vm, m)
@@ -175,8 +179,129 @@ private fun TeachScreen(vm: BrainViewModel, modifier: Modifier, onTeach: (Notifi
     }
 }
 
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecordCard(r: NotificationRecord, onFeedback: () -> Unit, onReopen: (() -> Unit)?) {
+private fun ArchiveScreen(vm: BrainViewModel, modifier: Modifier, onFeedback: (NotificationRecord) -> Unit) {
+    val dismissed by vm.dismissed.collectAsStateWithLifecycle()
+    val unreviewed by vm.unreviewed.collectAsStateWithLifecycle()
+    val recordCount by vm.recordCount.collectAsStateWithLifecycle()
+    var mode by rememberSaveable { mutableIntStateOf(0) }
+    var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    val byId = remember(dismissed) { dismissed.associateBy { it.id } }
+    val groups = remember(dismissed) {
+        Digest.group(dismissed.map { Digest.Item(it.id, it.appLabel, it.packageName, it.title, it.text, it.postedAt, it.reviewedAt != null) }, System.currentTimeMillis())
+    }
+
+    LazyColumn(modifier, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(mode == 0, { mode = 0 }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Digest") }
+                SegmentedButton(mode == 1, { mode = 1 }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("All") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(if (unreviewed == 0) "Everything reviewed." else "$unreviewed to review", style = MaterialTheme.typography.bodyMedium)
+                if (unreviewed > 0) TextButton(onClick = vm::markAllReviewed) { Text("Mark all reviewed") }
+            }
+        }
+        if (dismissed.isEmpty()) item { Text("Nothing dismissed yet. The seed policy keeps everything; teach it from the Teach tab.") }
+        else if (mode == 0) {
+            groups.forEach { day ->
+                item(key = "day-${day.dayStart}") {
+                    Column(Modifier.padding(top = 8.dp)) {
+                        Text("${day.label} · ${day.total}" + if (day.unreviewed > 0) " · ${day.unreviewed} new" else "", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                day.apps.forEach { app -> item(key = "app-${day.dayStart}-${app.packageName}") { AppGroupCard(app, byId, vm, onFeedback, onConfirm = { confirm = it }) } }
+            }
+        } else {
+            items(dismissed, key = { it.id }) { r ->
+                RecordCard(r, onFeedback = { onFeedback(r) }, onReopen = { vm.reopen(r) }, onDelete = { vm.deleteRecords(listOf(r.id)) })
+            }
+        }
+        item { StorageCard(recordCount, vm, onConfirm = { confirm = it }) }
+    }
+
+    confirm?.let { (text, action) ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("Delete?") },
+            text = { Text("$text\n\nRules are not affected. Anything you taught on these notifications is kept as a lesson for the court; only the notification content goes.") },
+            confirmButton = { TextButton(onClick = { action(); confirm = null }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun AppGroupCard(
+    app: Digest.AppGroup,
+    byId: Map<Long, NotificationRecord>,
+    vm: BrainViewModel,
+    onFeedback: (NotificationRecord) -> Unit,
+    onConfirm: (Pair<String, () -> Unit>) -> Unit,
+) {
+    var expanded by rememberSaveable(app.packageName) { mutableStateOf(app.unreviewed > 0 && app.items.size <= 3) }
+    val ids = app.items.map { it.id }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${app.appLabel} · ${app.items.size}" + if (app.unreviewed > 0) " · ${app.unreviewed} new" else "", style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide" else "Show") }
+            }
+            if (!expanded) {
+                app.items.take(2).forEach { Text("· ${it.title ?: it.text ?: ""}", style = MaterialTheme.typography.bodySmall, maxLines = 1) }
+                if (app.items.size > 2) Text("· and ${app.items.size - 2} more", style = MaterialTheme.typography.bodySmall)
+            } else {
+                app.items.forEach { item ->
+                    val r = byId[item.id] ?: return@forEach
+                    Column(Modifier.padding(vertical = 4.dp)) {
+                        Text((if (item.reviewed) "" else "● ") + (r.title ?: "") + " · " + timeOf(r.postedAt), style = MaterialTheme.typography.labelMedium)
+                        r.text?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { vm.reopen(r) }) { Text("Reopen") }
+                            TextButton(onClick = { onFeedback(r) }) { Text(if (r.feedbackChip == null) "Teach" else "Change") }
+                            TextButton(onClick = { vm.deleteRecords(listOf(r.id)) }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (app.unreviewed > 0) TextButton(onClick = { vm.markReviewed(ids) }) { Text("Mark reviewed") }
+                TextButton(onClick = { onConfirm("Delete all ${app.items.size} from ${app.appLabel} in this group?" to { vm.deleteRecords(ids) }) }) { Text("Delete group") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageCard(recordCount: Int, vm: BrainViewModel, onConfirm: (Pair<String, () -> Unit>) -> Unit) {
+    val bytes = remember(recordCount) { vm.databaseBytes() }
+    val lessons by vm.lessonCount.collectAsStateWithLifecycle()
+    Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Storage", style = MaterialTheme.typography.titleMedium)
+            Text("$recordCount records (kept and dismissed) · $lessons lessons kept from deleted ones · ${"%.1f".format(bytes / 1024.0 / 1024.0)} MB on disk. The app prunes at 60 days; anything sooner is yours. Deleting never touches rules.", style = MaterialTheme.typography.bodySmall)
+            FlowRowButtons(
+                "Delete reviewed" to { onConfirm("Delete every dismissal you have already reviewed?" to vm::deleteReviewed) },
+                "Older than 30 days" to { onConfirm("Delete every record older than 30 days?" to { vm.deleteOlderThan(30) }) },
+                "Older than 7 days" to { onConfirm("Delete every record older than 7 days?" to { vm.deleteOlderThan(7) }) },
+                "Delete everything" to { onConfirm("Delete the whole archive? The court will have no history until new notifications arrive." to vm::deleteAll) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRowButtons(vararg buttons: Pair<String, () -> Unit>) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        buttons.forEach { (label, action) -> OutlinedButton(onClick = action) { Text(label) } }
+    }
+}
+
+@Composable
+private fun RecordCard(r: NotificationRecord, onFeedback: () -> Unit, onReopen: (() -> Unit)?, onDelete: (() -> Unit)? = null) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("${r.appLabel} · ${timeOf(r.postedAt)}", style = MaterialTheme.typography.labelMedium)
@@ -187,6 +312,7 @@ private fun RecordCard(r: NotificationRecord, onFeedback: () -> Unit, onReopen: 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onReopen != null) TextButton(onClick = onReopen) { Text("Reopen") }
                 TextButton(onClick = onFeedback) { Text(if (r.feedbackChip == null) "Teach" else "Change") }
+                if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete") }
             }
         }
     }
