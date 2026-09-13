@@ -28,7 +28,7 @@ class BrainNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         Log.i(TAG, "listener connected")
         instance = this
-        scope.launch { graph.summaryNotifier.update(graph.repository.dismissedCountSince(startOfToday())) }
+        scope.launch { graph.summaryNotifier.update(graph.repository.dismissedCountSince(startOfToday()), graph.repository.unreviewedDismissedCount()) }
     }
 
     override fun onListenerDisconnected() {
@@ -67,7 +67,7 @@ class BrainNotificationListener : NotificationListenerService() {
             runCatching { cancelNotification(sbn.key) }.onFailure { Log.w(TAG, "cancel failed for ${sbn.key}", it) }
             dismissed++
         }
-        if (dismissed > 0) graph.summaryNotifier.update(graph.repository.dismissedCountSince(startOfToday()))
+        if (dismissed > 0) graph.summaryNotifier.update(graph.repository.dismissedCountSince(startOfToday()), graph.repository.unreviewedDismissedCount())
         return dismissed
     }
 
@@ -85,7 +85,7 @@ class BrainNotificationListener : NotificationListenerService() {
             if (decision.verdict == Verdict.DISMISS) {
                 runCatching { cancelNotification(sbn.key) }
                     .onFailure { Log.w(TAG, "cancel failed for ${sbn.key}", it) }
-                graph.summaryNotifier.update(graph.repository.dismissedCountSince(startOfToday()))
+                graph.summaryNotifier.update(graph.repository.dismissedCountSince(startOfToday()), graph.repository.unreviewedDismissedCount())
             }
         }
         Log.d(TAG, "${decision.verdict} ${sbn.packageName}/${facts.channelId} via ${decision.ruleId}")

@@ -22,7 +22,9 @@ com.ioscastaway.notificationbrain
 │   │                       RuleCompilerPrompt (system prompt + JSON schema), InstructionEditor
 │   ├── AutoLearner         repeated quick swipes → proposed DISMISS rules (origin OBSERVED)
 │   └── Replay              Replay.run, ReplayReport, PolicyCourt (adopt / reject / unchanged)
-├── data/                   Room. NotificationRecord (archive row), CrashRecord, BrainDao, BrainRepository
+├── data/                   Room. NotificationRecord (archive row), LessonRecord (label + facts kept
+│                           when a labeled row is deleted), CrashRecord, BrainDao, BrainRepository
+│   └── brain/Digest        pure grouping of dismissals by day then app, for the Archive's Digest view
 ├── platform/               Everything that touches Android APIs
 │   ├── BrainNotificationListener   NotificationListenerService: posted → classify → archive → cancel
 │   ├── FactsExtractor              StatusBarNotification → NotificationFacts (the only reader of sbn)
@@ -91,6 +93,11 @@ Teach tab, "In your shade now"
   entries (label, package, channel ids). Notification bodies never leave the device.
 - Every learner produces a candidate and hands it to `PolicyCourt`; nothing calls
   `PolicyStore.save` except `BrainRepository` after a verdict.
+- The court's history is `notifications` plus `lessons`. Every delete path (per row, per group,
+  reviewed, older-than, everything, and the 60-day prune) first copies rows that carry a chip into
+  `lessons`. Deleting never changes `policy.json`.
+- Schema changes are additive and go through Room auto-migrations (v1 → v2 added `reviewedAt`,
+  v2 → v3 added `lessons`), so an update never wipes the archive.
 
 ## Known limits (see README → Limitations for the user-facing version)
 

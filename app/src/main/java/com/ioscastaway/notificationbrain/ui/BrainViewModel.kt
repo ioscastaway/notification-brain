@@ -51,6 +51,43 @@ class BrainViewModel(app: Application) : AndroidViewModel(app) {
     val falseDismissals = repo.falseDismissals().stateIn(viewModelScope, eagerly, 0)
     val policy = graph.policyStore.policy
     val crashes = repo.crashes().stateIn(viewModelScope, eagerly, emptyList())
+    val unreviewed = repo.unreviewedDismissed().stateIn(viewModelScope, eagerly, 0)
+    val recordCount = repo.recordCount().stateIn(viewModelScope, eagerly, 0)
+    val lessonCount = repo.lessonCount().stateIn(viewModelScope, eagerly, 0)
+
+    /** brain.db plus its write-ahead log, as the user sees it in App info. */
+    fun databaseBytes(): Long {
+        val db = getApplication<Application>().getDatabasePath("brain.db")
+        return listOf(db, java.io.File(db.path + "-wal"), java.io.File(db.path + "-shm")).sumOf { if (it.exists()) it.length() else 0L }
+    }
+
+    fun markReviewed(ids: List<Long>) {
+        viewModelScope.launch { val n = repo.markReviewed(ids); message = "$n marked as reviewed."; refreshSummary() }
+    }
+
+    fun markAllReviewed() {
+        viewModelScope.launch { val n = repo.markAllReviewed(); message = "$n marked as reviewed."; refreshSummary() }
+    }
+
+    fun deleteRecords(ids: List<Long>) {
+        viewModelScope.launch { val n = repo.deleteRecords(ids); message = "$n deleted."; refreshSummary() }
+    }
+
+    fun deleteReviewed() {
+        viewModelScope.launch { val n = repo.deleteReviewed(); message = "$n reviewed dismissals deleted."; refreshSummary() }
+    }
+
+    fun deleteOlderThan(days: Int) {
+        viewModelScope.launch { val n = repo.deleteOlderThan(days); message = "$n records older than $days days deleted."; refreshSummary() }
+    }
+
+    fun deleteAll() {
+        viewModelScope.launch { val n = repo.deleteAll(); message = "$n records deleted. Rules and lessons are untouched."; refreshSummary() }
+    }
+
+    private suspend fun refreshSummary() {
+        graph.summaryNotifier.update(repo.dismissedCountSince(today), repo.unreviewedDismissedCount())
+    }
 
     fun refreshAccess() {
         accessGranted = NotificationAccess.isGranted(getApplication())

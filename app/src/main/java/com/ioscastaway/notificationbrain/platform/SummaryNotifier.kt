@@ -27,9 +27,9 @@ class SummaryNotifier(private val context: Context) {
         )
     }
 
-    fun update(dismissedToday: Int) {
+    fun update(dismissedToday: Int, unreviewed: Int = 0) {
         if (!canPost()) return
-        if (dismissedToday <= 0) {
+        if (dismissedToday <= 0 && unreviewed <= 0) {
             nm.cancel(ID)
             return
         }
@@ -40,8 +40,8 @@ class SummaryNotifier(private val context: Context) {
         )
         val n = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("$dismissedToday tidied today")
-            .setContentText("Tap to review, undo, or teach the brain.")
+            .setContentTitle(if (dismissedToday > 0) "$dismissedToday tidied today" else "$unreviewed to review")
+            .setContentText(if (unreviewed > 0) "$unreviewed not yet reviewed. Tap to catch up, undo, or teach the brain." else "All reviewed. Tap to undo or teach the brain.")
             .setContentIntent(open)
             .setOnlyAlertOnce(true)
             .setAutoCancel(false)
