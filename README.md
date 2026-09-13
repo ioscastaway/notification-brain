@@ -63,12 +63,22 @@ posted ──► facts ──► HardKeep guard ──► ordered rules ──�
                                          DISMISS ──► archive row ──► cancelNotification
 removed(reason) ──► outcome on the row (USER_SWIPED / USER_OPENED / ...)
 
-Archive / Learn tab: one chip ──► PolicyLearner ──► candidate policy
-                                                        │
+one chip on a card (Archive / Teach) ──► PolicyLearner      ─┐
+a sentence on the Rules tab ──► Claude ──► InstructionEditor  ─┼──► candidate policy
+three quick swipes, no taps ──► AutoLearner                   ─┘         │
                        PolicyCourt: replay candidate against every archived row with its label
                                                         │
                                    passes ──► adopt        fails ──► refuse, keep the feedback
+                                                        │
+                                   re-judge the shade, cancel what the new policy dismisses
 ```
+
+| Rules tab, a sentence compiled and previewed | Teach tab, the shade right now | Archive, with Reopen |
+|---|---|---|
+| ![Rules preview](docs/screenshots/rules-preview.png) | ![Teach](docs/screenshots/teach.png) | ![Archive](docs/screenshots/archive.png) |
+
+(Emulator screenshots. The pixel cat in the Archive shot is [cross-app-agent](https://github.com/ioscastaway/cross-app-agent)'s
+bubble from another session, not part of this app.)
 
 Three ways to teach it, all ending in the same court:
 
@@ -103,10 +113,11 @@ can reach it.
 `brain/` is pure Kotlin with no Android imports: facts, policy, engine, the three learners
 (chips, instructions, observed swipes), the compiler prompt and schema, replay, court. It runs in
 JVM tests and inside the app's replay. `platform/` is the only place that touches
-`StatusBarNotification`, files, the notification manager, or the Anthropic SDK. `data/` is Room. The full package map
-and invariants are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which the build bundles as an
-asset so the running app can show it on the Lab tab next to its own git revision. That file is the
-first entry of the knowledge base the later stages read.
+`StatusBarNotification`, files, the notification manager, or the Anthropic SDK. `data/` is Room.
+
+The full package map and invariants are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), which
+the build bundles as an asset so the running app can show it on the Lab tab next to its own git
+revision. That file is the first entry of the knowledge base the later stages read.
 
 ## What I learned
 
@@ -209,5 +220,5 @@ harness is what makes the rewrite safe, and it will outlive the rules it current
 
 ---
 
-**Reason I don't regret switching to Android** (number to be assigned in the profile index):
+**Reason #08 I don't regret switching to Android:**
 The phone's notifications are a data source, not just a distraction.
